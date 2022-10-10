@@ -8,18 +8,100 @@ output:
 
 ## Loading and preprocessing the data
 
+```{r data}
+library(ggplot2)
+library(dplyr)
+library(lattice)
+resetPar <- function() {
+  dev.new()
+  op <- par(no.readonly = TRUE)
+  dev.off()
+  op
+}
+if(!file.exists("./data")){dir.create("./data")}
+if (!file.exists("./data/repdata_data_activity.zip")){
+  file_url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+  download.file(file_url, "./data/repdata_data_activity.zip")
+  rm(file_url)
+}
+setwd("./data")
+if (!file.exists("activity.csv")) { 
+  unzip("repdata_data_activity.zip") 
+}
 
+if(!exists("dfActivity")) {
+  dfActivity <- read.csv("activity.csv")
+  dfActivity$date <- as.Date(dfActivity$date, "%Y-%m-%d")
+}
+
+if(!exists("dfRemoveNA")) {
+  dfRemoveNA <- dfActivity[!(is.na(dfActivity$steps)),]
+  dfDate <- group_by(dfRemoveNA, date) 
+  dfNoZero <- dfDate[dfRemoveNA$steps > 0, ]  
+}
+```
 
 ## What is mean total number of steps taken per day?
 
+```{r}
+plot(dfActivity %>% group_by(date) %>% summarise(totalSteps = sum(steps, na.rm = T)), type = "h",main = "Total Steps (NAs removed)")
+ggplot(dfActivity, aes(date, steps)) + geom_point() + geom_smooth() 
+summarise(dfNoZero, meanSteps = mean(steps, na.rm=T), medianSteps = median(steps, na.rm=T), totalSteps = sum(steps, na.rm=T))
 
+
+```
 
 ## What is the average daily activity pattern?
+```{r}
+dfIntervalMeanAll <- dfActivity %>% group_by(interval) %>% summarise(mean=mean(steps, na.rm = T))
+plot(dfIntervalMeanAll, type = "l", main="Steps >= 0", xlab = "Time Interval (24hr)", ylab="Steps")
+```
 
+### Most active time interval? 
+#### 8:35 AM
+```{r}
+dfIntervalMeanAll[dfIntervalMeanAll$mean == max(dfIntervalMeanAll$mean),"interval"]
+```
 
 
 ## Imputing missing values
+#### Number of missing values? 
+```{r}
+nrow(dfActivity[is.na(dfActivity$steps),])
+```
+#### Imput missing values... 
+```{r}
+dfReplaceNA <- merge(dfActivity, dfIntervalMeanAll, by = "interval")
+#set newStep = Interval mean for NAs
+dfReplaceNA[is.na(dfReplaceNA$steps),"newstep"] <- round(dfReplaceNA[is.na(dfReplaceNA$steps), "mean"])
+dfReplaceNA[!is.na(dfReplaceNA$steps),"newstep"] <- round(dfReplaceNA[!is.na(dfReplaceNA$steps), "steps"])
+dfReplaceNA$mean <- NULL
+names(dfReplaceNA) <- c("interval", "oldSteps", "date", "steps")
+head(dfReplaceNA[is.na(dfReplaceNA$oldSteps),])
 
-
-
+par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))
+plot(dfActivity %>% group_by(date) %>% summarise(totalSteps = sum(steps, na.rm = T)), type = "h",main = "Total Steps (NAs removed)")
+plot(dfReplaceNA %>% group_by(date) %>% summarise(totalSteps = sum(steps, na.rm = T)), type = "h",main = "Total Steps (NAs replaced)")
+par(resetPar())
+```
 ## Are there differences in activity patterns between weekdays and weekends?
+#### Answer: Not really
+```{r}
+
+dfReplaceNA$DOW <- weekdays(dfReplaceNA$date)
+weekend <- dfReplaceNA$DOW %in% c("Saturday","Sunday")
+dfReplaceNA[weekend,"day"] <- "weekend"
+dfReplaceNA[!weekend,"day"] <- "weekday"
+head(dfReplaceNA)
+df2 <- dfReplaceNA %>% group_by(interval, day) %>% summarise(mean=mean(steps))
+
+
+xyplot(log(mean)~interval|day, data=df2, type="l", layout=c(1,2), ylab = "Number of Steps")
+
+
+
+```
+
+
+
+
